@@ -21,6 +21,7 @@ import numpy as np
 from flask import Flask, render_template, request, jsonify, send_from_directory
 
 import leaf_classifier as lc
+import database as db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
@@ -28,6 +29,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR)
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # Maksimal 16MB
+
+# Inisialisasi database SQLite saat server pertama kali berjalan
+db.init_db()
 
 
 def make_json_safe(obj):
@@ -146,12 +150,74 @@ def process_pipeline():
             }
         }
 
+        # Simpan hasil ke database SQLite
+        try:
+            riwayat_id = db.simpan_hasil_klasifikasi(
+                pipeline_res=pipeline_res,
+                source_name=source_name,
+                leaf_name=leaf_name,
+                metode_threshold=metode_threshold,
+                dataset_10=dataset_10
+            )
+            response_data["riwayat_id"] = riwayat_id
+        except Exception as db_err:
+            print(f"[DB WARNING] Gagal menyimpan ke database: {db_err}")
+            response_data["riwayat_id"] = None
+
         safe_response = make_json_safe(response_data)
         return jsonify(safe_response)
 
     except Exception as e:
         import traceback
         traceback.print_exc()
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+# =============================================================================
+# ROUTE API: RIWAYAT KLASIFIKASI (DATABASE)
+# =============================================================================
+@app.route("/api/riwayat", methods=["GET"])
+def get_riwayat():
+    """Mengambil daftar riwayat klasifikasi dari database (50 terbaru)."""
+    try:
+        limit = int(request.args.get("limit", 50))
+        data = db.ambil_semua_riwayat(limit=limit)
+        return jsonify({"success": True, "data": data, "total": len(data)})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/riwayat/<int:riwayat_id>", methods=["GET"])
+def get_detail_riwayat(riwayat_id):
+    """Mengambil detail satu riwayat beserta 10 baris dataset fitur."""
+    try:
+        detail = db.ambil_detail_riwayat(riwayat_id)
+        if detail is None:
+            return jsonify({"success": False, "error": "Riwayat tidak ditemukan"}), 404
+        return jsonify({"success": True, "data": detail})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/riwayat/<int:riwayat_id>", methods=["DELETE"])
+def delete_riwayat(riwayat_id):
+    """Menghapus satu riwayat dari database."""
+    try:
+        ok = db.hapus_riwayat(riwayat_id)
+        if not ok:
+            return jsonify({"success": False, "error": "Riwayat tidak ditemukan"}), 404
+        return jsonify({"success": True, "message": f"Riwayat #{riwayat_id} berhasil dihapus"})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
+
+@app.route("/api/statistik", methods=["GET"])
+def get_statistik():
+    """Mengambil statistik ringkasan dari seluruh riwayat klasifikasi."""
+    try:
+        stats = db.hitung_statistik()
+        return jsonify({"success": True, "data": stats})
+    except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 

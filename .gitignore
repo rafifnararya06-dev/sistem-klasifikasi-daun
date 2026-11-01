@@ -12,6 +12,11 @@ venv/
 env/
 .env
 
+# Database SQLite (data lokal, tidak perlu di-push)
+*.db
+*.sqlite
+*.sqlite3
+
 # OS files
 .DS_Store
 Thumbs.db
