@@ -1,0 +1,998 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sistem Pengolahan Citra Daun & Klasifikasi Kemiripan - UTS CV</title>
+  
+  <!-- Google Fonts: Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800;900&display=swap" rel="stylesheet">
+  
+  <!-- Stylesheet Eksternal -->
+  <link rel="stylesheet" href="style.css">
+
+  <style>
+    /* Styling Tambahan Khusus Alur 6 Langkah */
+    .upload-zone {
+      border: 2px dashed var(--accent-emerald);
+      border-radius: var(--radius-md);
+      padding: 35px 20px;
+      text-align: center;
+      background: rgba(16, 185, 129, 0.04);
+      cursor: pointer;
+      transition: var(--transition);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 12px;
+    }
+    .upload-zone:hover, .upload-zone.dragover {
+      background: rgba(16, 185, 129, 0.12);
+      border-color: var(--accent-mint);
+      transform: translateY(-2px);
+    }
+    .upload-icon {
+      font-size: 3rem;
+      color: var(--accent-mint);
+    }
+    .upload-title {
+      font-size: 1.15rem;
+      font-weight: 700;
+      color: #fff;
+    }
+    .upload-desc {
+      color: var(--text-muted);
+      font-size: 0.88rem;
+    }
+    .file-preview-card {
+      display: none;
+      margin-top: 18px;
+      background: var(--bg-surface);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-md);
+      padding: 14px 20px;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+    }
+    .leaf-name-input {
+      background: rgba(0, 0, 0, 0.45);
+      border: 1px solid var(--accent-emerald);
+      border-radius: var(--radius-sm);
+      color: #ffffff;
+      padding: 6px 12px;
+      font-size: 0.95rem;
+      font-weight: 700;
+      font-family: inherit;
+      width: 260px;
+      outline: none;
+      transition: var(--transition);
+    }
+    .leaf-name-input:focus {
+      border-color: var(--accent-mint);
+      box-shadow: 0 0 10px rgba(52, 211, 153, 0.35);
+      background: rgba(0, 0, 0, 0.7);
+    }
+    .file-preview-left {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+    .file-preview-thumb {
+      width: 55px;
+      height: 55px;
+      object-fit: cover;
+      border-radius: 8px;
+      border: 1px solid var(--border-subtle);
+      background: #000;
+    }
+    .file-preview-info h5 {
+      color: #fff;
+      font-size: 0.95rem;
+      font-weight: 600;
+    }
+    .formula-badge {
+      display: inline-block;
+      background: rgba(6, 182, 212, 0.12);
+      border: 1px solid rgba(6, 182, 212, 0.4);
+      color: var(--accent-cyan);
+      padding: 6px 14px;
+      border-radius: 8px;
+      font-family: monospace;
+      font-size: 0.88rem;
+      margin-top: 10px;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Header -->
+  <header class="app-header">
+    <div class="container">
+      <div class="brand-badge">🍃 Computer Vision - Pengolahan & Klasifikasi Citra Daun</div>
+      <h1>Sistem Analisis Citra Daun & Klasifikasi Berbasis Kemiripan</h1>
+      <p>Alur Pemrosesan Citra Digital: 1. Input Citra &rarr; 2. Segmentasi Pemisahan Background &rarr; 3. Gambar Berwarna ke Grayscale &rarr; 4. Thresholding 3 Metode (Global, Adaptive, Otsu) &rarr; 5. Ekstraksi Ciri (Warna, Tekstur, Bentuk) &rarr; 6. Klasifikasi & Perbandingan Kemiripan</p>
+    </div>
+  </header>
+
+  <main class="container">
+
+    <!-- LANGKAH 1: INPUT CITRA (FILE EXPLORER) -->
+    <section class="card" id="selectionCard">
+      <div class="card-title">
+        <div class="card-title-left">
+          <div class="step-num">1</div>
+          <h2>Langkah 1: Input Citra Daun</h2>
+        </div>
+        <span class="badge">Pilih dari File Explorer</span>
+      </div>
+
+      <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+        Pilih 1 file citra daun (JPG, PNG, JPEG) dari komputer Anda. Sistem akan memuat citra asli berwarna untuk diproses pada seluruh tahapan alur computer vision.
+      </p>
+
+      <!-- Area Upload File Explorer -->
+      <div class="upload-zone" id="uploadZone" onclick="document.getElementById('fileInput').click()">
+        <div class="upload-icon">📂</div>
+        <div class="upload-title">Klik untuk Membuka File Explorer</div>
+        <div class="upload-desc">Pilih 1 file citra daun (JPG, PNG, atau JPEG). Atau seret dan letakkan file di sini.</div>
+        <input type="file" id="fileInput" accept="image/*" style="display: none;" onchange="handleFileSelected(event)">
+      </div>
+
+      <!-- Preview File Terpilih & Penyesuaian Nama Daun -->
+      <div class="file-preview-card" id="filePreviewCard">
+        <div class="file-preview-left" style="flex: 1;">
+          <img id="filePreviewThumb" src="" alt="Thumbnail" class="file-preview-thumb">
+          <div class="file-preview-info" style="flex: 1;">
+            <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 6px; flex-wrap: wrap;">
+              <span style="color: var(--accent-mint); font-size: 0.85rem; font-weight: 700;">Nama Citra / Spesimen:</span>
+              <input type="text" id="inputLeafName" class="leaf-name-input" placeholder="Nama daun..." title="Nama daun disesuaikan otomatis dan dapat diedit">
+              <span class="badge" style="background: rgba(16, 185, 129, 0.15); color: var(--accent-mint); font-size: 0.72rem;">Siap Diproses ✓</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.8rem; color: var(--text-muted);">
+              <span>File: <strong id="previewFileName" style="color: #cbd5e1;">daun.jpg</strong></span>
+              <span>•</span>
+              <span id="previewFileSize">Ukuran file</span>
+            </div>
+          </div>
+        </div>
+        <button type="button" class="btn-secondary" onclick="document.getElementById('fileInput').click()">
+          Ganti File Citra
+        </button>
+      </div>
+
+      <!-- Tombol Eksekusi -->
+      <div class="action-bar" style="margin-top: 24px;">
+        <span style="font-size: 0.88rem; color: var(--text-muted);" id="statusSelected">
+          Belum ada citra daun yang dipilih.
+        </span>
+        <button class="btn-primary" id="btnRunProcess" onclick="runProcessPipeline()" disabled>
+          <span>⚡ Jalankan Pemrosesan Citra (Alur 1 s/d 6)</span>
+        </button>
+      </div>
+    </section>
+
+    <!-- Loading Spinner -->
+    <div class="spinner-overlay" id="loadingState">
+      <div class="spinner"></div>
+      <h3 style="color: #fff; margin-bottom: 6px;">Memproses Citra Digital...</h3>
+      <p style="color: var(--text-muted); font-size: 0.9rem;">Menjalankan Segmentasi Pemisahan Background, Grayscale, Thresholding 3 Metode, Ekstraksi Ciri, dan Klasifikasi Kemiripan.</p>
+    </div>
+
+    <!-- HASIL PEMROSESAN LENGKAP -->
+    <div id="resultsContainer" style="display: none;">
+
+      <!-- LANGKAH 2: SEGMENTASI PEMISAHAN BACKGROUND -->
+      <section class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <div class="step-num">2</div>
+            <h2>Langkah 2: Segmentasi Pemisahan Background</h2>
+          </div>
+          <span class="badge">Isolasi Objek Daun dari Latar Belakang</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+          Pemisahan objek daun (foreground) dari latar belakang (background) dilakukan secara presisi dengan mendeteksi perbedaan warna kromatik dan saturasi terhadap latar belakang, serta menerapkan teknik penutupan rongga (hole filling). Metode ini mempertahankan keutuhan bentuk asli daun, ujung helai daun, dan detail tulang daun tanpa memotong atau merusak objek daun.
+        </p>
+
+        <div class="bg-seg-grid">
+          <!-- 1. Citra Asli Input -->
+          <div class="seg-card-box">
+            <h5><span>1.</span> Citra Asli Input</h5>
+            <img id="imgStep2Original" src="" alt="Citra Asli">
+            <div class="seg-tag" id="dimStep2Original">256 × 256 px</div>
+          </div>
+
+          <!-- 2. Masker Pemisahan Background -->
+          <div class="seg-card-box">
+            <h5><span>2.</span> Masker Pemisahan</h5>
+            <img id="imgStep2Mask" src="" alt="Masker Pemisahan">
+            <div class="seg-tag">Siluet Biner Objek</div>
+          </div>
+
+          <!-- 3. Daun Tersegmentasi -->
+          <div class="seg-card-box">
+            <h5><span>3.</span> Daun Tersegmentasi</h5>
+            <img id="imgStep2Segmented" src="" alt="Daun Tersegmentasi">
+            <div class="seg-tag" id="tagStep2LeafArea">Daun: 0%</div>
+          </div>
+
+          <!-- 4. Background Terisolasi -->
+          <div class="seg-card-box">
+            <h5><span>4.</span> Background Terisolasi</h5>
+            <img id="imgStep2Background" src="" alt="Background Terisolasi">
+            <div class="seg-tag" id="tagStep2BgArea">Background: 0%</div>
+          </div>
+        </div>
+
+        <div class="metrics-row" style="margin-top: 18px;">
+          <div class="metric-pill highlight">
+            <div class="label">Luas Objek Daun</div>
+            <div class="value" id="valStep2LeafPx">0 px</div>
+          </div>
+          <div class="metric-pill">
+            <div class="label">Rasio Daun terhadap Kanvas</div>
+            <div class="value" id="valStep2LeafPct">0%</div>
+          </div>
+          <div class="metric-pill">
+            <div class="label">Luas Background Terpisah</div>
+            <div class="value" id="valStep2BgPx">0 px</div>
+          </div>
+          <div class="metric-pill">
+            <div class="label">Rasio Background Terpisah</div>
+            <div class="value" id="valStep2BgPct">0%</div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- LANGKAH 3: GAMBAR BERWARNA KE GRAYSCALE (DARI DAUN TERSEGMENTASI) -->
+      <section class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <div class="step-num">3</div>
+            <h2>Langkah 3: Gambar Berwarna ke Grayscale (Daun Tersegmentasi)</h2>
+          </div>
+          <span class="badge">Grayscale dari Daun Tersegmentasi (0 - 255)</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+          Mengambil bagian daun yang telah tersegmentasi (tetap berwarna) dari Langkah 2, kemudian dikonversi menjadi citra derajat keabuan (Grayscale). Dengan mengonversi hanya bagian daun yang sudah tersegmentasi saja, intensitas keabuan murni merepresentasikan helai daun tanpa pengaruh warna dari background. Rumus konversi standar ITU-R BT.601:
+        </p>
+
+        <div style="text-align: center; margin-bottom: 18px;">
+          <div class="formula-badge">
+            Y = 0.299 · R + 0.587 · G + 0.114 · B
+          </div>
+        </div>
+
+        <div class="comparison-grid" style="grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));">
+          <div class="visual-box">
+            <h4>Daun Tersegmentasi Berwarna (Sebelum Konversi)</h4>
+            <img id="imgStep3Color" src="" alt="Citra Daun Tersegmentasi Berwarna">
+          </div>
+          <div class="visual-box">
+            <h4>Hasil Grayscale Daun Tersegmentasi (Setelah Konversi)</h4>
+            <img id="imgStep3Gray" src="" alt="Citra Grayscale Daun Tersegmentasi">
+          </div>
+        </div>
+
+        <div class="metrics-row" style="margin-top: 18px;">
+          <div class="metric-pill highlight">
+            <div class="label">Intensitas Rata-rata</div>
+            <div class="value" id="valStep3Mean">-</div>
+          </div>
+          <div class="metric-pill">
+            <div class="label">Standar Deviasi</div>
+            <div class="value" id="valStep3Std">-</div>
+          </div>
+          <div class="metric-pill">
+            <div class="label">Intensitas Minimum</div>
+            <div class="value" id="valStep3Min">0</div>
+          </div>
+          <div class="metric-pill">
+            <div class="label">Intensitas Maksimum</div>
+            <div class="value" id="valStep3Max">255</div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- LANGKAH 4: GRAYSCALE KE THRESHOLDING DENGAN 3 METODE (GLOBAL, ADAPTIVE, OTSU) -->
+      <section class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <div class="step-num">4</div>
+            <h2>Langkah 4: Grayscale ke Thresholding dengan 3 Metode Berbeda</h2>
+          </div>
+          <span class="badge">Global • Adaptive • Otsu</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+          Citra grayscale disegmentasikan menjadi citra biner (hitam-putih) menggunakan 3 metode thresholding yang berbeda. Anda dapat memilih metode mana yang dijadikan acuan segmentasi aktif:
+        </p>
+
+        <div class="thresh-3-grid">
+          <!-- 1. Global Thresholding -->
+          <div class="thresh-method-card" id="cardThreshGlobal" onclick="setThresholdMethod('global')">
+            <div class="thresh-card-header">
+              <div>
+                <h4>1. Global Thresholding</h4>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">Ambang Batas Konstan</span>
+              </div>
+              <span class="thresh-val-pill">T = 127</span>
+            </div>
+            <img id="imgThreshGlobal" src="" alt="Global Thresholding" class="thresh-card-img">
+            <div class="thresh-card-desc">
+              Menggunakan nilai ambang statis T=127 untuk membagi seluruh piksel citra menjadi biner. Cepat dan sederhana untuk kontras latar yang seragam.
+            </div>
+            <div class="thresh-select-btn" id="btnSelectGlobal">Pilih Metode Global</div>
+          </div>
+
+          <!-- 2. Adaptive Thresholding -->
+          <div class="thresh-method-card" id="cardThreshAdaptive" onclick="setThresholdMethod('adaptive')">
+            <div class="thresh-card-header">
+              <div>
+                <h4>2. Adaptive Thresholding</h4>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">Ambang Dinamis Lokal</span>
+              </div>
+              <span class="thresh-val-pill">Gaussian C (15x15)</span>
+            </div>
+            <img id="imgThreshAdaptive" src="" alt="Adaptive Thresholding" class="thresh-card-img">
+            <div class="thresh-card-desc">
+              Menghitung ambang lokal dinamis per regio blok ketetanggaan Gaussian sehingga tahan terhadap pencahayaan yang tidak merata.
+            </div>
+            <div class="thresh-select-btn" id="btnSelectAdaptive">Pilih Metode Adaptive</div>
+          </div>
+
+          <!-- 3. Otsu Thresholding -->
+          <div class="thresh-method-card active-thresh" id="cardThreshOtsu" onclick="setThresholdMethod('otsu')">
+            <div class="thresh-card-header">
+              <div>
+                <h4>3. Otsu Thresholding</h4>
+                <span style="font-size: 0.78rem; color: var(--text-muted);">Optimal Intra-Class Variance</span>
+              </div>
+              <span class="thresh-val-pill" id="badgeOtsuVal">T = Auto</span>
+            </div>
+            <img id="imgThreshOtsu" src="" alt="Otsu Thresholding" class="thresh-card-img">
+            <div class="thresh-card-desc">
+              Menganalisis histogram derajat keabuan untuk meminimalkan variansi intra-kelas secara matematis. Sangat optimal untuk pemisahan daun dan latar.
+            </div>
+            <div class="thresh-select-btn" id="btnSelectOtsu">✓ Metode Aktif (Default)</div>
+          </div>
+        </div>
+      </section>
+
+
+      <!-- LANGKAH 5: EKSTRAKSI DARI WARNA, TEKSTUR, DAN BENTUK -->
+      <section class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <div class="step-num">5</div>
+            <h2>Langkah 5: Ekstraksi Ciri (Warna, Tekstur, dan Bentuk)</h2>
+          </div>
+          <span class="badge">Vektor Ciri Komprehensif</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 20px;">
+          Parameter kuantitatif hasil ekstraksi dari citra daun yang Anda pilih, terbagi menjadi 3 domain utama: <strong>Ciri Warna</strong>, <strong>Ciri Tekstur (GLCM & Venasi)</strong>, dan <strong>Ciri Bentuk (Morfometri)</strong>.
+        </p>
+
+        <div class="features-trio-container">
+          
+          <!-- PANEL 1: CIRI WARNA -->
+          <div class="feature-panel">
+            <div class="feature-panel-header">
+              <div class="feature-panel-title">
+                <span>🎨</span>
+                <span>1. Ciri Warna (Color)</span>
+              </div>
+              <span class="badge">RGB & HSV</span>
+            </div>
+
+            <!-- Swatch Warna Dominan -->
+            <div class="color-swatch-banner">
+              <div class="color-swatch-circle" id="colorSwatchCircle" style="background-color: #2e7d32;"></div>
+              <div class="color-swatch-meta">
+                <h6 id="colorCategoryTitle">Hijau Alami</h6>
+                <span>HEX: <strong id="colorHexVal">#2e7d32</strong></span>
+              </div>
+            </div>
+
+            <p style="color: var(--text-muted); font-size: 0.8rem; margin-bottom: 12px;">
+              Distribusi intensitas pigmen warna klorofil dan kroma daun:
+            </p>
+
+            <div class="metrics-dense-grid">
+              <div class="metric-dense-card">
+                <span class="label">R Mean ± Std</span>
+                <span class="value" id="valColorR">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">G Mean ± Std</span>
+                <span class="value" id="valColorG">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">B Mean ± Std</span>
+                <span class="value" id="valColorB">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">H (Hue / Corak)</span>
+                <span class="value" id="valColorH">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">S (Saturation)</span>
+                <span class="value" id="valColorS">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">V (Value / Terang)</span>
+                <span class="value" id="valColorV">-</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- PANEL 2: CIRI TEKSTUR & STRUKTUR -->
+          <div class="feature-panel">
+            <div class="feature-panel-header">
+              <div class="feature-panel-title">
+                <span>🧬</span>
+                <span>2. Ciri Tekstur & Struktur</span>
+              </div>
+              <span class="badge">GLCM & Venasi</span>
+            </div>
+
+            <!-- Visual X-Ray Vena Daun -->
+            <div class="venation-xray-box">
+              <img id="imgVenationMap" src="" alt="Struktur Vena Daun" class="venation-xray-img">
+              <span class="venation-caption">Pola Tulang & Struktur Urat Daun (X-Ray Map)</span>
+            </div>
+
+            <div class="metrics-dense-grid">
+              <div class="metric-dense-card">
+                <span class="label">GLCM Kontras</span>
+                <span class="value" id="valStructContrast">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">GLCM Homogenitas</span>
+                <span class="value" id="valStructHomog">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">GLCM Dissimilarity</span>
+                <span class="value" id="valStructDissim">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">GLCM Energi</span>
+                <span class="value" id="valStructEnergy">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">GLCM Korelasi</span>
+                <span class="value" id="valStructCorr">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">Kerapatan Vena</span>
+                <span class="value" id="valStructDensity">-</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- PANEL 3: CIRI BENTUK -->
+          <div class="feature-panel">
+            <div class="feature-panel-header">
+              <div class="feature-panel-title">
+                <span>📐</span>
+                <span>3. Ciri Bentuk (Shape)</span>
+              </div>
+              <span class="badge">Morfometri</span>
+            </div>
+
+            <div class="venation-xray-box">
+              <img id="imgShapeKontur" src="" alt="Kontur Morfometri" class="venation-xray-img">
+              <span class="venation-caption">Kontur Utama (Hijau), Hull (Oranye), Box (Cyan)</span>
+            </div>
+
+            <div class="metrics-dense-grid">
+              <div class="metric-dense-card">
+                <span class="label">Metric (Kebundaran)</span>
+                <span class="value" id="valShapeMetric">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">Eccentricity (Lonjong)</span>
+                <span class="value" id="valShapeEcc">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">Aspect Ratio (L/P)</span>
+                <span class="value" id="valShapeAR">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">Solidity (Kerapatan)</span>
+                <span class="value" id="valShapeSolidity">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">Luas Area Utama</span>
+                <span class="value" id="valShapeArea">-</span>
+              </div>
+              <div class="metric-dense-card">
+                <span class="label">Keliling (Perimeter)</span>
+                <span class="value" id="valShapePerim">-</span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+
+      <!-- LANGKAH 6: KLASIFIKASI & PERBANDINGAN KEMIRIPAN DENGAN DAUN LAIN -->
+      <section class="card" id="sectionKlasifikasi">
+        <div class="card-title">
+          <div class="card-title-left">
+            <div class="step-num">6</div>
+            <h2>Langkah 6: Klasifikasi & Perbandingan Kemiripan Daun</h2>
+          </div>
+          <span class="badge">Komparasi Kemiripan Relatif</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 20px;">
+          Menjawab secara langsung: <em>"Memiliki kemiripan dengan daun apa? dan berapa persentasenya?"</em> melalui perbandingan vektor ciri warna, bentuk, dan tekstur terhadap seluruh jenis daun referensi:
+        </p>
+
+        <!-- KOTAK VERSUS & HASIL UTAMA -->
+        <div class="classification-hero-card">
+          <div class="versus-comparison-box">
+            <!-- Sisi Kiri: Citra Input -->
+            <div class="versus-leaf">
+              <img id="versusInputImg" src="" alt="Citra Input" class="versus-thumb">
+              <div>
+                <span style="font-size: 0.75rem; color: var(--accent-mint); font-weight: 700; text-transform: uppercase;">Citra yang Diinput</span>
+                <h4 style="color: #fff; font-size: 1.15rem; margin: 2px 0;" id="versusInputName">Daun Input</h4>
+                <span style="font-size: 0.78rem; color: var(--text-muted);" id="versusInputDim">256 × 256 px</span>
+              </div>
+            </div>
+
+            <!-- Simbol VS -->
+            <div class="versus-badge-vs">VS</div>
+
+            <!-- Sisi Kanan: Daun Paling Mirip -->
+            <div class="versus-leaf" style="justify-content: flex-end;">
+              <div style="text-align: right;">
+                <span style="font-size: 0.75rem; color: var(--accent-mint); font-weight: 700; text-transform: uppercase;">Kemiripan Tertinggi (Rank #1)</span>
+                <h4 style="color: #fff; font-size: 1.25rem; margin: 2px 0; font-weight: 800;" id="predLeafName">Nama Daun</h4>
+                <div style="font-size: 0.82rem; font-style: italic; color: var(--accent-cyan);" id="predScientificName">Nama Ilmiah</div>
+              </div>
+              <img id="predThumbImg" src="" alt="Daun Referensi" class="versus-thumb">
+            </div>
+          </div>
+
+          <!-- Tingkat Kemiripan Utama -->
+          <div class="confidence-meter-box">
+            <div class="confidence-header">
+              <span class="confidence-label">Persentase Kemiripan Tertinggi:</span>
+              <span class="confidence-percent" id="predConfidenceVal">0%</span>
+            </div>
+            <div class="confidence-track">
+              <div class="confidence-fill" id="predConfidenceBar" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Deskripsi & Alasan Perbandingan Botani -->
+          <div class="pred-desc-box" id="predDescBox">
+            Memuat analisis komparasi ciri warna, tekstur, dan bentuk terhadap daun referensi...
+          </div>
+        </div>
+
+        <!-- TABEL KOMPARASI LENGKAP DENGAN SELURUH DAUN LAIN -->
+        <h4 style="color: var(--text-main); font-size: 1.05rem; margin: 26px 0 14px; display: flex; align-items: center; gap: 8px;">
+          📊 Tabel Perbandingan Kemiripan dengan Seluruh Jenis Daun Referensi (Peringkat 1 s/d 8):
+        </h4>
+
+        <div class="table-wrapper">
+          <table class="sim-rank-table">
+            <thead>
+              <tr>
+                <th style="width: 70px;">Rank</th>
+                <th style="width: 60px;">Foto</th>
+                <th>Jenis Daun Referensi</th>
+                <th style="min-width: 170px;">Persentase Kemiripan Total</th>
+                <th>Rincian Ciri (Warna / Bentuk / Tekstur)</th>
+                <th>Status Kemiripan</th>
+              </tr>
+            </thead>
+            <tbody id="simTableBody">
+              <!-- Diisi otomatis oleh JavaScript -->
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+
+      <!-- DATA SUPLEMEN: DATASET 10 BARIS & 10 CITRA VARIASI -->
+      <section class="card">
+        <div class="card-title">
+          <div class="card-title-left">
+            <div class="step-num">📊</div>
+            <h2>Data Suplemen: 10 Variasi Citra & Dataset Fitur</h2>
+          </div>
+          <span class="badge">10 Baris Fitur Digital</span>
+        </div>
+        <p style="color: var(--text-muted); font-size: 0.88rem; margin-bottom: 16px;">
+          Dataset fitur berjumlah 10 baris yang diekstrak dari citra daun terpilih melalui 10 variasi transformasi citra:
+        </p>
+
+        <!-- Galeri 10 Citra Variasi -->
+        <h4 style="color: var(--text-main); font-size: 0.95rem; margin-bottom: 12px;">Visualisasi 10 Variasi Citra Input:</h4>
+        <div class="grid-10" id="output10Grid" style="margin-bottom: 24px;">
+          <!-- Diisi JS -->
+        </div>
+
+        <!-- Tabel Dataset 10 Baris -->
+        <h4 style="color: var(--text-main); font-size: 0.95rem; margin-bottom: 12px;">Tabel Data Fitur yang Dihasilkan:</h4>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr id="datasetHead"></tr>
+            </thead>
+            <tbody id="datasetBody"></tbody>
+          </table>
+        </div>
+      </section>
+
+    </div>
+  </main>
+
+  <footer>
+    <p>Sistem Pengolahan & Analisis Citra Daun &copy; 2026 • Tugas UTS Computer Vision</p>
+  </footer>
+
+  <!-- SCRIPT LOGIKA FRONTEND LENGKAP -->
+  <script>
+    let currentSelectedFile = null;
+    let selectedThresholdMethod = 'otsu';
+
+    // Ekstraksi nama daun dari nama file
+    function extractLeafName(fileName) {
+      if (!fileName) return "Daun Spesimen";
+      let name = fileName.replace(/\.[^/.]+$/, "");
+      name = name.replace(/[_-]+/g, " ").trim();
+      name = name.replace(/^\d+[\.\s\-]+/, "");
+      name = name.replace(/^(citra|gambar|sample|leaf|foto|img)\s*(daun)?\s*/i, "");
+      name = name.trim();
+      if (!name) return "Daun Spesimen";
+
+      const lower = name.toLowerCase();
+      if (lower === "oak" || lower === "daun oak" || lower === "ek") return "Daun Oak (Ek)";
+      if (lower === "kuping gajah" || lower === "daun kuping gajah") return "Daun Kuping Gajah";
+      if (lower === "kopi" || lower === "daun kopi") return "Daun Kopi";
+      if (lower === "maple" || lower === "daun maple") return "Daun Maple";
+      if (lower === "mangga" || lower === "daun mangga") return "Daun Mangga";
+      if (lower === "pandan" || lower === "daun pandan") return "Daun Pandan";
+      if (lower === "pepaya" || lower === "daun pepaya") return "Daun Pepaya";
+      if (lower === "sirih" || lower === "daun sirih") return "Daun Sirih";
+
+      let words = name.split(/\s+/).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
+      let formatted = words.join(" ");
+      if (!/^daun\b/i.test(formatted)) {
+        formatted = "Daun " + formatted;
+      }
+      return formatted;
+    }
+
+    // Pemilihan Metode Thresholding Aktif
+    function setThresholdMethod(method) {
+      selectedThresholdMethod = method;
+      ['global', 'adaptive', 'otsu'].forEach(m => {
+        const card = document.getElementById('cardThresh' + capitalize(m));
+        const btn = document.getElementById('btnSelect' + capitalize(m));
+        if (m === method) {
+          card.classList.add('active-thresh');
+          btn.textContent = '✓ Metode Aktif';
+        } else {
+          card.classList.remove('active-thresh');
+          btn.textContent = 'Pilih Metode ' + capitalize(m);
+        }
+      });
+
+      // Bila sudah ada file yang dipilih, jalankan pembaruan pipeline
+      if (currentSelectedFile) {
+        runProcessPipeline();
+      }
+    }
+
+    function capitalize(s) {
+      return s.charAt(0).toUpperCase() + s.slice(1);
+    }
+
+    // Handler Pemilihan File dari File Explorer
+    function handleFileSelected(event) {
+      const file = event.target.files[0];
+      if (!file) return;
+
+      currentSelectedFile = file;
+      const detectedLeafName = extractLeafName(file.name);
+
+      const nameInput = document.getElementById('inputLeafName');
+      if (nameInput) {
+        nameInput.value = detectedLeafName;
+      }
+      document.getElementById('previewFileName').textContent = file.name;
+      document.getElementById('previewFileSize').textContent = (file.size / 1024).toFixed(1) + ' KB';
+
+      const reader = new FileReader();
+      reader.onload = function(e) {
+        document.getElementById('filePreviewThumb').src = e.target.result;
+      };
+      reader.readAsDataURL(file);
+
+      document.getElementById('filePreviewCard').style.display = 'flex';
+      document.getElementById('statusSelected').textContent = 'Citra siap diproses: ' + detectedLeafName;
+      document.getElementById('statusSelected').style.color = 'var(--accent-mint)';
+      document.getElementById('btnRunProcess').disabled = false;
+    }
+
+    // Drag and Drop
+    const dropZone = document.getElementById('uploadZone');
+    ['dragenter', 'dragover'].forEach(eName => {
+      dropZone.addEventListener(eName, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      }, false);
+    });
+    ['dragleave', 'drop'].forEach(eName => {
+      dropZone.addEventListener(eName, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+      }, false);
+    });
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length > 0) {
+        document.getElementById('fileInput').files = files;
+        handleFileSelected({ target: { files: files } });
+      }
+    });
+
+    // Eksekusi Pipeline
+    async function runProcessPipeline() {
+      if (!currentSelectedFile) {
+        alert('Silakan pilih citra daun dari File Explorer terlebih dahulu!');
+        return;
+      }
+
+      const nameInput = document.getElementById('inputLeafName');
+      const leafName = (nameInput && nameInput.value.trim()) ? nameInput.value.trim() : extractLeafName(currentSelectedFile.name);
+
+      const btn = document.getElementById('btnRunProcess');
+      const loader = document.getElementById('loadingState');
+      const results = document.getElementById('resultsContainer');
+
+      btn.disabled = true;
+      loader.style.display = 'block';
+      results.style.display = 'none';
+
+      try {
+        const formData = new FormData();
+        formData.append('file', currentSelectedFile);
+        formData.append('threshold_method', selectedThresholdMethod);
+        formData.append('leaf_name', leafName);
+
+        const response = await fetch('/api/process', {
+          method: 'POST',
+          body: formData
+        });
+
+        const data = await response.json();
+        if (!data.success) {
+          alert('Error: ' + data.error);
+          return;
+        }
+
+        renderAllResults(data);
+        results.style.display = 'block';
+        results.scrollIntoView({ behavior: 'smooth' });
+
+      } catch (err) {
+        alert('Gagal memproses citra. Pastikan server Flask berjalan!');
+        console.error(err);
+      } finally {
+        btn.disabled = false;
+        loader.style.display = 'none';
+      }
+    }
+
+    // Render Seluruh Hasil Langkah 1 s/d 6
+    function renderAllResults(data) {
+      // ==========================================
+      // LANGKAH 1: INPUT CITRA
+      // ==========================================
+      const s1 = data.step1_input;
+      document.getElementById('versusInputImg').src = s1.visual_base64;
+      document.getElementById('versusInputName').textContent = data.leaf_name || 'Citra Daun';
+      document.getElementById('versusInputDim').textContent = `Resolusi: ${s1.orig_dim}`;
+
+      // ==========================================
+      // LANGKAH 2: SEGMENTASI PEMISAHAN BACKGROUND
+      // ==========================================
+      const s2 = data.step2_segmentasi;
+      document.getElementById('imgStep2Original').src = s1.visual_base64;
+      document.getElementById('dimStep2Original').textContent = s1.dim_standard;
+      document.getElementById('imgStep2Mask').src = s2.visual.mask_base64;
+      document.getElementById('imgStep2Segmented').src = s2.visual.segmented_leaf_base64;
+      document.getElementById('imgStep2Background').src = s2.visual.background_isolated_base64;
+
+      document.getElementById('tagStep2LeafArea').textContent = `Daun: ${s2.leaf_pct}%`;
+      document.getElementById('tagStep2BgArea').textContent = `Background: ${s2.bg_pct}%`;
+
+      document.getElementById('valStep2LeafPx').textContent = s2.leaf_px.toLocaleString() + ' px';
+      document.getElementById('valStep2LeafPct').textContent = s2.leaf_pct + '%';
+      document.getElementById('valStep2BgPx').textContent = s2.bg_px.toLocaleString() + ' px';
+      document.getElementById('valStep2BgPct').textContent = s2.bg_pct + '%';
+
+      // ==========================================
+      // LANGKAH 3: GAMBAR BERWARNA KE GRAYSCALE
+      // ==========================================
+      const s3 = data.step3_grayscale;
+      document.getElementById('imgStep3Color').src = s3.visual_color_base64 || s2.visual.segmented_leaf_base64;
+      document.getElementById('imgStep3Gray').src = s3.visual_base64;
+
+      document.getElementById('valStep3Mean').textContent = s3.mean_intensity;
+      document.getElementById('valStep3Std').textContent = s3.std_intensity;
+      document.getElementById('valStep3Min').textContent = s3.min_val;
+      document.getElementById('valStep3Max').textContent = s3.max_val;
+
+      // ==========================================
+      // LANGKAH 4: THRESHOLDING 3 METODE
+      // ==========================================
+      const s4 = data.step4_thresholding;
+      document.getElementById('imgThreshGlobal').src = s4.metode.global.visual_base64;
+      document.getElementById('imgThreshAdaptive').src = s4.metode.adaptive.visual_base64;
+      document.getElementById('imgThreshOtsu').src = s4.metode.otsu.visual_base64;
+      document.getElementById('badgeOtsuVal').textContent = s4.metode.otsu.nilai_ambang.split(' ')[0] + ' ' + s4.metode.otsu.nilai_ambang.split(' ')[2];
+
+      // Update active state visual
+      ['global', 'adaptive', 'otsu'].forEach(m => {
+        const card = document.getElementById('cardThresh' + capitalize(m));
+        const btn = document.getElementById('btnSelect' + capitalize(m));
+        if (m === s4.active_method) {
+          card.classList.add('active-thresh');
+          btn.textContent = '✓ Metode Aktif';
+        } else {
+          card.classList.remove('active-thresh');
+          btn.textContent = 'Pilih Metode ' + capitalize(m);
+        }
+      });
+
+      // ==========================================
+      // LANGKAH 5: EKSTRAKSI CIRI (WARNA, TEKSTUR, BENTUK)
+      // ==========================================
+      const s5 = data.step5_ekstraksi;
+      // 1. Warna
+      const w = s5.warna;
+      document.getElementById('colorSwatchCircle').style.backgroundColor = w.hex || '#2e7d32';
+      document.getElementById('colorHexVal').textContent = w.hex || '#2e7d32';
+      document.getElementById('colorCategoryTitle').textContent = w.kategori_warna || 'Warna Alami';
+      document.getElementById('valColorR').textContent = `${w.R_mean} ± ${w.R_std}`;
+      document.getElementById('valColorG').textContent = `${w.G_mean} ± ${w.G_std}`;
+      document.getElementById('valColorB').textContent = `${w.B_mean} ± ${w.B_std}`;
+      document.getElementById('valColorH').textContent = `${w.H_mean}`;
+      document.getElementById('valColorS').textContent = `${w.S_mean}`;
+      document.getElementById('valColorV').textContent = `${w.V_mean}`;
+
+      // 2. Tekstur
+      const t = s5.tekstur;
+      document.getElementById('imgVenationMap').src = t.visual_venation_base64;
+      document.getElementById('valStructContrast').textContent = t.kontras;
+      document.getElementById('valStructHomog').textContent = t.homogenitas;
+      document.getElementById('valStructDissim').textContent = t.dissimilarity;
+      document.getElementById('valStructEnergy').textContent = t.energi;
+      document.getElementById('valStructCorr').textContent = t.korelasi;
+      document.getElementById('valStructDensity').textContent = t.venation_percentage;
+
+      // 3. Bentuk
+      const b = s5.bentuk;
+      document.getElementById('imgShapeKontur').src = b.visual_kontur_base64;
+      document.getElementById('valShapeMetric').textContent = b.metric;
+      document.getElementById('valShapeEcc').textContent = b.eccentricity;
+      document.getElementById('valShapeAR').textContent = b.aspect_ratio;
+      document.getElementById('valShapeSolidity').textContent = b.solidity;
+      document.getElementById('valShapeArea').textContent = b.main_area.toLocaleString() + ' px';
+      document.getElementById('valShapePerim').textContent = b.main_perimeter.toLocaleString() + ' px';
+
+      // ==========================================
+      // LANGKAH 6: KLASIFIKASI & PERBANDINGAN KEMIRIPAN
+      // ==========================================
+      const s6 = data.step6_klasifikasi;
+      document.getElementById('predLeafName').textContent = s6.predicted_class;
+      document.getElementById('predScientificName').textContent = `${s6.scientific_name} (${s6.family})`;
+      document.getElementById('predConfidenceVal').textContent = s6.top_similarity + '%';
+      document.getElementById('predConfidenceBar').style.width = Math.min(100, Math.max(0, s6.top_similarity)) + '%';
+      document.getElementById('predThumbImg').src = s6.top_thumb;
+      document.getElementById('predDescBox').textContent = s6.alasan;
+
+      // Render Tabel Komparasi Peringkat Kemiripan (Ranking 1 - 8)
+      const tbodySim = document.getElementById('simTableBody');
+      tbodySim.innerHTML = '';
+
+      s6.daftar_perbandingan.forEach(item => {
+        const tr = document.createElement('tr');
+
+        // Color class for progress bar
+        let barClass = 'low';
+        if (item.persentase_total >= 88.0) barClass = 'high';
+        else if (item.persentase_total >= 75.0) barClass = 'mid';
+
+        tr.innerHTML = `
+          <td>
+            <span class="rank-num-badge rank-${item.rank}">#${item.rank}</span>
+          </td>
+          <td>
+            <img src="${item.thumb_base64}" alt="${item.nama_daun}" class="sim-table-thumb">
+          </td>
+          <td>
+            <div style="font-weight: 700; color: #fff; font-size: 0.95rem;">${item.nama_daun}</div>
+            <div style="font-size: 0.78rem; font-style: italic; color: var(--accent-mint);">${item.nama_ilmiah}</div>
+            <div style="font-size: 0.72rem; color: var(--text-muted); margin-top: 2px;">Famili: ${item.famili}</div>
+          </td>
+          <td>
+            <div class="sim-bar-container">
+              <div style="display: flex; justify-content: space-between; align-items: baseline;">
+                <span style="font-size: 1.05rem; font-weight: 900; color: #fff;">${item.persentase_total}%</span>
+                <span style="font-size: 0.72rem; color: var(--text-muted);">Kemiripan Total</span>
+              </div>
+              <div class="sim-bar-track">
+                <div class="sim-bar-fill ${barClass}" style="width: ${item.persentase_total}%;"></div>
+              </div>
+            </div>
+          </td>
+          <td>
+            <div class="mini-trio-breakdown">
+              <span>🎨 Warna: <strong>${item.persentase_warna}%</strong></span>
+              <span>📐 Bentuk: <strong>${item.persentase_bentuk}%</strong></span>
+              <span>🧬 Tekstur: <strong>${item.persentase_tekstur}%</strong></span>
+            </div>
+            <div style="font-size: 0.75rem; color: var(--text-muted); margin-top: 4px; line-height: 1.35;">
+              ${item.catatan}
+            </div>
+          </td>
+          <td>
+            <span class="sim-badge ${item.badge_class}">${item.status_label}</span>
+          </td>
+        `;
+        tbodySim.appendChild(tr);
+      });
+
+      // ==========================================
+      // DATA SUPLEMEN: 10 VARIASI & 10 BARIS FITUR
+      // ==========================================
+      const grid10 = document.getElementById('output10Grid');
+      grid10.innerHTML = '';
+      data.output_10_citra.forEach(item => {
+        const card = document.createElement('div');
+        card.className = 'thumb-card';
+        card.innerHTML = `
+          <img src="${item.base64}" alt="${item.name}">
+          <div class="caption" title="${item.name}">${item.name}</div>
+        `;
+        grid10.appendChild(card);
+      });
+
+      const fnames = data.dataset_10.feature_names;
+      const thead = document.getElementById('datasetHead');
+      const tbody = document.getElementById('datasetBody');
+
+      thead.innerHTML = '<th>No</th><th>Sumber Citra</th><th>Variasi Citra</th>' + 
+        fnames.map(f => `<th>${f}</th>`).join('');
+
+      tbody.innerHTML = '';
+      data.dataset_10.records.forEach(row => {
+        const tr = document.createElement('tr');
+        let cols = `<td><strong>${row.no}</strong></td>
+                    <td style="color: var(--accent-mint); font-weight: 600;">${row.citra}</td>
+                    <td style="color: var(--text-muted);">${row.variasi}</td>`;
+        fnames.forEach(f => {
+          cols += `<td>${row[f]}</td>`;
+        });
+        tr.innerHTML = cols;
+        tbody.appendChild(tr);
+      });
+    }
+  </script>
+</body>
+</html>
