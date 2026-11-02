@@ -28,7 +28,18 @@ import numpy as np
 from skimage.feature import graycomatrix, graycoprops
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-CITRA_DAUN_DIR = os.path.join(BASE_DIR, "Citra Daun")
+
+# Cari folder "Citra Daun" secara fleksibel:
+# - Lokal: BASE_DIR/Citra Daun
+# - Vercel: BASE_DIR/public/Citra Daun (karena static files disimpan di /public)
+_local_citra = os.path.join(BASE_DIR, "Citra Daun")
+_public_citra = os.path.join(BASE_DIR, "public", "Citra Daun")
+if os.path.isdir(_local_citra):
+    CITRA_DAUN_DIR = _local_citra
+elif os.path.isdir(_public_citra):
+    CITRA_DAUN_DIR = _public_citra
+else:
+    CITRA_DAUN_DIR = _local_citra  # fallback default
 
 # Daftar Nama Fitur Lengkap untuk Dataset Suplemen (10 baris)
 FEATURE_NAMES = [

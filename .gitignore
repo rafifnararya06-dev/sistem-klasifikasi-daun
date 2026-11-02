@@ -1,4 +1,6 @@
-# Folder uploads (file sementara yang diupload user, tidak perlu di-tracking)
+# ============================================================
+# Upload sementara (tidak perlu di-tracking)
+# ============================================================
 uploads/
 
 # Python cache
@@ -12,7 +14,7 @@ venv/
 env/
 .env
 
-# Database SQLite (data lokal, tidak perlu di-push)
+# Database SQLite lokal (tidak perlu di-push, Vercel pakai in-memory)
 *.db
 *.sqlite
 *.sqlite3
@@ -20,3 +22,10 @@ env/
 # OS files
 .DS_Store
 Thumbs.db
+
+# File batch & VBS lokal (hanya untuk menjalankan lokal, tidak perlu di-push)
+*.bat
+*.vbs
+
+# Vercel build output
+.vercel
