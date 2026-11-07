@@ -1,41 +1,73 @@
 """
 =============================================================================
-APP.PY - FLASK BACKEND KLASIFIKASI & ANALISIS CITRA DAUN (UTS CV REVISI)
+APP.PY - FLASK BACKEND SISTEM KLASIFIKASI CITRA DAUN (UTS COMPUTER VISION)
 =============================================================================
-Alur Processing yang Benar:
-  1. Input Citra (Pilih citra daun dari File Explorer)
-  2. Segmentasi Pemisahan Background (Isolasi daun dari latar belakang)
-  3. Gambar Berwarna ke Grayscale (Konversi RGB/BGR ke tingkat keabuan)
-  4. Grayscale ke Thresholding dengan 3 Metode Berbeda (Global, Adaptive, Otsu)
-  5. Ekstraksi dari Warna, Tekstur, dan Bentuk (RGB/HSV, GLCM/Venasi, Morfometri)
-  6. Klasifikasi & Perbandingan Kemiripan dengan Jenis Daun Lain
-     - Menentukan daun apa yang paling mirip
-     - Menghitung persentase kemiripan komprehensif
-     - Menyajikan tabel komparasi peringkat seluruh daun referensi
+Mematuhi secara ketat alur pemrosesan Computer Vision:
+  1. Input Citra:
+     - Menerima citra daun berwarna (JPG, PNG, JPEG) dari antarmuka web.
+  2. Pre-processing:
+     - Resize seragam (256x256 piksel).
+     - Filter Gaussian Blur untuk menghaluskan dan mereduksi noise/watermark halus.
+  3. Segmentasi Grayscale & Otsu Thresholding:
+     - Konversi ke Grayscale.
+     - Penyesuaian adaptif terhadap 3 kondisi background: Putih, Kotak-kotak, dan Hitam.
+     - Operasi Morfologi (Opening & Closing) untuk menghasilkan Citra Biner solid
+       dan mempertahankan bentuk asli daun tanpa cacat.
+  4. Ekstraksi Fitur (10 Fitur Terstandar):
+     - Bentuk: Area, Perimeter, Circularity dari citra biner.
+     - Masking bitwise_and pada citra warna asli.
+     - Warna: Rata-rata ruang warna HSV (H, S, V) pada piksel daun ber-masking.
+     - Tekstur: GLCM Contrast, Energy, Homogeneity, Correlation.
+  5. Klasifikasi K-NN (K-Nearest Neighbors):
+     - Membandingkan bentuk dan fitur daun input dengan seluruh daun di folder 'Citra Daun'.
+     - Menyesuaikan nama daun input dan menghitung persentase kemiripan daun yang mirip.
+  6. Tingkat Akurasi Model (%):
+     - Menampilkan persentase akurasi model teruji.
+  7. Analisis Fitur:
+     - Menampilkan kontribusi dan analisis fitur mana yang paling berpengaruh di web.
 =============================================================================
 """
 
 import os
+import json
 import cv2
 import numpy as np
 from flask import Flask, render_template, request, jsonify, send_from_directory
 
-import leaf_classifier as lc
+import feature_extraction as fe
+import model_training as mt
 import database as db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+CITRA_DIR = os.path.join(BASE_DIR, "Citra Daun")
 UPLOAD_DIR = os.path.join(BASE_DIR, "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 app = Flask(__name__, template_folder=BASE_DIR, static_folder=BASE_DIR)
-app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024  # Maksimal 16MB
+app.config["MAX_CONTENT_LENGTH"] = 32 * 1024 * 1024  # Maksimal 32MB upload
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
 
-# Inisialisasi database SQLite saat server pertama kali berjalan
-db.init_db()
+# Pastikan Browser Selalu Mengambil Versi Terbaru Tanpa Tertahan Cache
+@app.after_request
+def add_no_cache_headers(response):
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0, post-check=0, pre-check=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "-1"
+    return response
+
+# Inisialisasi DB (opsional)
+try:
+    db.init_db()
+except Exception as e:
+    print(f"[DB INFO] Inisialisasi DB: {e}")
 
 
 def make_json_safe(obj):
-    """Mengonversi secara rekursif setiap tipe numpy/ndarray ke tipe Python agar aman diserialisasi ke JSON."""
+    """
+    Mengonversi secara rekursif setiap tipe numpy array, float32, int32, dll.
+    ke tipe native Python agar aman diserialisasi ke JSON tanpa memicu TypeError.
+    """
     if isinstance(obj, dict):
         return {k: make_json_safe(v) for k, v in obj.items() if not isinstance(v, np.ndarray)}
     elif isinstance(obj, (list, tuple)):
@@ -55,117 +87,121 @@ def make_json_safe(obj):
 
 @app.route("/")
 def index():
-    """Tampilan utama web sistem pengolahan citra daun."""
+    """Tampilan antarmuka website utama."""
     return render_template("index.html")
 
 
 @app.route("/style.css")
 def serve_css():
-    """Melayani file CSS."""
+    """Melayani file stylesheet CSS."""
     return send_from_directory(BASE_DIR, "style.css", mimetype="text/css")
 
 
+@app.route("/Citra Daun/<path:filename>")
+def serve_citra_daun(filename):
+    """Melayani citra daun referensi dari folder 'Citra Daun'."""
+    return send_from_directory(CITRA_DIR, filename)
+
+
 # =============================================================================
-# ROUTE API: PROSES PIPELINE LENGKAP (LANGKAH 1 s/d 6)
+# ROUTE UTAMA API: PROSES LENGKAP PENGOLAHAN CITRA & KLASIFIKASI K-NN
 # =============================================================================
+@app.route("/api/classify", methods=["POST"])
 @app.route("/api/process", methods=["POST"])
-def process_pipeline():
+def classify_leaf():
     """
-    Menerima citra yang dipilih dari File Explorer (Upload) dan metode thresholding.
-    Menjalankan alur pemrosesan:
-      1. Input Citra
-      2. Segmentasi Pemisahan Background
-      3. Gambar Berwarna ke Grayscale
-      4. Grayscale ke Thresholding dengan 3 Metode Berbeda (Global, Adaptive, Otsu)
-      5. Ekstraksi dari Warna, Tekstur, dan Bentuk
-      6. Klasifikasi & Perbandingan Kemiripan dengan Jenis Daun Lain
+    Menjalankan alur pemrosesan 7 poin:
+      1. Input citra
+      2. Pre-processing (resize seragam 256x256, Gaussian Blur denoising)
+      3. Segmentasi Grayscale & Otsu thresholding adaptif (Putih, Kotak-kotak, Hitam)
+      4. Ekstraksi fitur (Bentuk, Warna HSV, Tekstur GLCM)
+      5. Klasifikasi K-NN: membandingkan dengan seluruh daun di folder 'Citra Daun',
+         menyesuaikan nama daun input dan menghitung persentase kemiripannya
+      6. Tingkat akurasi sistem (%)
+      7. Analisis fitur paling berpengaruh
     """
     img_bgr = None
-    source_name = "Citra Daun"
-    leaf_name = request.form.get("leaf_name", "").strip()
-    metode_threshold = request.form.get("threshold_method", "otsu")
+    source_name = "daun_input.jpg"
+    user_leaf_name = request.form.get("leaf_name", "").strip()
 
-    # 1. Mengambil file dari File Explorer (Upload)
+    # 1. Terima gambar daun berwarna
     if "file" in request.files and request.files["file"].filename != "":
         file = request.files["file"]
         source_name = file.filename
         file_bytes = np.frombuffer(file.read(), np.uint8)
         img_bgr = cv2.imdecode(file_bytes, cv2.IMREAD_COLOR)
 
-    # Validasi input
     if img_bgr is None:
         return jsonify({
             "success": False,
-            "error": "Silakan pilih citra daun dari File Explorer terlebih dahulu!"
+            "error": "Silakan unggah citra daun yang valid (format JPG, PNG, atau JPEG)!"
         }), 400
 
+    # Jika nama input tidak diisi manual, gunakan nama file yang diunggah
+    if not user_leaf_name:
+        user_leaf_name = os.path.splitext(source_name)[0].strip()
+
     try:
-        # Ekstrak atau pastikan nama daun dari citra yang dipilih
-        if not leaf_name:
-            leaf_name = lc.extract_leaf_name(source_name)
+        # ---------------------------------------------------------------------
+        # TAHAP 1 s/d 4: PRE-PROCESSING, SEGMENTASI, MASKING & EKSTRAKSI FITUR
+        # ---------------------------------------------------------------------
+        pipeline_res = fe.process_leaf_pipeline(img_bgr)
+        feature_vector = pipeline_res["feature_vector"]
 
-        # Jalankan 6 Langkah Pemrosesan Lengkap
-        pipeline_res = lc.proses_citra_lengkap(
-            img_bgr,
-            metode_threshold=metode_threshold,
-            leaf_name=leaf_name,
-            source_filename=source_name
-        )
+        # ---------------------------------------------------------------------
+        # TAHAP 5 s/d 7: KLASIFIKASI K-NN & PERBANDINGAN DENGAN CITRA DAUN
+        # ---------------------------------------------------------------------
+        knn_res = mt.compare_and_classify_leaf(feature_vector, user_input_name=user_leaf_name)
 
-        # Hasilkan 10 variasi citra visual
-        variations_raw = lc.generate_10_variations(img_bgr)
-        output_10_citra = []
-        for var in variations_raw:
-            output_10_citra.append({
-                "name": var["name"],
-                "base64": lc.image_to_base64(var["img"], is_bgr=True)
-            })
-
-        # Bentuk dataset fitur 10 baris dari citra yang dipilih
-        dataset_10 = lc.buat_dataset_10_fitur(
-            img_bgr,
-            nama_daun=leaf_name,
-            metode_threshold=metode_threshold
-        )
-
-        response_data = {
+        response_payload = {
             "success": True,
             "source_name": source_name,
-            "leaf_name": leaf_name,
-            "threshold_method_chosen": metode_threshold,
+            "user_leaf_name": user_leaf_name,
 
-            # 6 LANGKAH PROCESSING
-            "step1_input": pipeline_res["step1_input"],
-            "step2_segmentasi": pipeline_res["step2_segmentasi"],
-            "step3_grayscale": pipeline_res["step3_grayscale"],
-            "step4_thresholding": pipeline_res["step4_thresholding"],
-            "step5_ekstraksi": pipeline_res["step5_ekstraksi"],
-            "step6_klasifikasi": pipeline_res["step6_klasifikasi"],
+            # TAHAPAN VISUAL SESUAI ALUR:
+            "visual_sequence": {
+                "citra_asli": pipeline_res["visual"]["citra_asli"],
+                "citra_preprocessing": pipeline_res["visual"]["citra_preprocessing"],
+                "citra_grayscale": pipeline_res["visual"]["citra_grayscale"],
+                "citra_biner": pipeline_res["visual"]["citra_biner"],
+                "citra_segmented_gray": pipeline_res["visual"]["citra_segmented_gray"],
+                "citra_masked": pipeline_res["visual"]["citra_masked"],
+                "citra_kontur": pipeline_res["visual"]["citra_kontur"],
+                "citra_xray": pipeline_res["visual"]["citra_xray"],
+                "citra_morfometri": pipeline_res["visual"]["citra_morfometri"]
+            },
 
-            # Visual 10 Citra & Dataset Fitur
-            "output_10_citra": output_10_citra,
-            "dataset_10": {
-                "feature_names": lc.FEATURE_NAMES,
-                "records": dataset_10
+            # KONDISI BACKGROUND TERDETEKSI & NILAI OTSU
+            "background_condition": pipeline_res["background_condition"],
+            "otsu_threshold": pipeline_res["otsu_threshold"],
+
+            # DATA NUMERIK RIIL HASIL EKSTRAKSI (10 FITUR)
+            "features_extracted": pipeline_res["features"],
+            "feature_vector": [float(x) for x in feature_vector],
+
+            # HASIL KLASIFIKASI K-NN & KEMIRIPAN TERHADAP CITRA DAUN
+            "classification": {
+                "predicted_leaf": knn_res["predicted_leaf"],
+                "predicted_filename": knn_res["predicted_filename"],
+                "scientific_name": knn_res["scientific_name"],
+                "family": knn_res["family"],
+                "bentuk_morfologi": knn_res["bentuk_morfologi"],
+                "top_similarity_percentage": knn_res["top_similarity_percentage"],
+                "confidence_percentage": knn_res["confidence_percentage"],
+                "model_accuracy_percentage": knn_res["model_accuracy_percentage"],
+                "dynamic_probabilities": knn_res["dynamic_probabilities"],
+                "top_matches": knn_res["top_matches"],
+                "all_similarities": knn_res["all_similarities"]
+            },
+
+            # ANALISIS FITUR PALING BERPENGARUH
+            "feature_importance_analysis": {
+                "ranking": knn_res["feature_ranking"],
+                "kesimpulan": knn_res["kesimpulan_analisis"]
             }
         }
 
-        # Simpan hasil ke database SQLite
-        try:
-            riwayat_id = db.simpan_hasil_klasifikasi(
-                pipeline_res=pipeline_res,
-                source_name=source_name,
-                leaf_name=leaf_name,
-                metode_threshold=metode_threshold,
-                dataset_10=dataset_10
-            )
-            response_data["riwayat_id"] = riwayat_id
-        except Exception as db_err:
-            print(f"[DB WARNING] Gagal menyimpan ke database: {db_err}")
-            response_data["riwayat_id"] = None
-
-        safe_response = make_json_safe(response_data)
-        return jsonify(safe_response)
+        return jsonify(make_json_safe(response_payload))
 
     except Exception as e:
         import traceback
@@ -174,59 +210,92 @@ def process_pipeline():
 
 
 # =============================================================================
-# ROUTE API: RIWAYAT KLASIFIKASI (DATABASE)
+# ROUTE API: DATASET FITUR 30 DAUN LENGKAP
 # =============================================================================
-@app.route("/api/riwayat", methods=["GET"])
-def get_riwayat():
-    """Mengambil daftar riwayat klasifikasi dari database (50 terbaru)."""
+@app.route("/api/dataset", methods=["GET"])
+def get_dataset_features():
+    """
+    Mengembalikan seluruh rekaman dataset fitur 30 citra daun dari 'dataset_features.json'.
+    Menjawab permintaan: 'Jangan lupakan dataset fiturnya juga'.
+    """
+    dataset_json_path = os.path.join(BASE_DIR, "dataset_features.json")
+    if not os.path.exists(dataset_json_path):
+        mt.train_and_evaluate_model()
+
     try:
-        limit = int(request.args.get("limit", 50))
-        data = db.ambil_semua_riwayat(limit=limit)
-        return jsonify({"success": True, "data": data, "total": len(data)})
+        with open(dataset_json_path, "r", encoding="utf-8") as f:
+            records = json.load(f)
+        return jsonify({
+            "success": True,
+            "total_records": len(records),
+            "data": records
+        })
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/api/riwayat/<int:riwayat_id>", methods=["GET"])
-def get_detail_riwayat(riwayat_id):
-    """Mengambil detail satu riwayat beserta 10 baris dataset fitur."""
+# =============================================================================
+# ROUTE API: METADATA MODEL & SAMPEL PENGUJIAN
+# =============================================================================
+@app.route("/api/metadata", methods=["GET"])
+def get_metadata():
+    """Mengembalikan metadata model KNN, akurasi, dan daftar ranking fitur."""
+    meta_path = os.path.join(BASE_DIR, "model_metadata.json")
+    if not os.path.exists(meta_path):
+        mt.train_and_evaluate_model()
+
     try:
-        detail = db.ambil_detail_riwayat(riwayat_id)
-        if detail is None:
-            return jsonify({"success": False, "error": "Riwayat tidak ditemukan"}), 404
-        return jsonify({"success": True, "data": detail})
+        with open(meta_path, "r", encoding="utf-8") as f:
+            meta = json.load(f)
+        return jsonify({"success": True, "data": meta})
     except Exception as e:
         return jsonify({"success": False, "error": str(e)}), 500
 
 
-@app.route("/api/riwayat/<int:riwayat_id>", methods=["DELETE"])
-def delete_riwayat(riwayat_id):
-    """Menghapus satu riwayat dari database."""
-    try:
-        ok = db.hapus_riwayat(riwayat_id)
-        if not ok:
-            return jsonify({"success": False, "error": "Riwayat tidak ditemukan"}), 404
-        return jsonify({"success": True, "message": f"Riwayat #{riwayat_id} berhasil dihapus"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
+@app.route("/api/sample/<path:leaf_key>", methods=["GET"])
+def get_sample_leaf(leaf_key):
+    """
+    Menyediakan citra sampel daun dari folder 'Citra Daun' untuk pengujian instan.
+    Mendukung nama file langsung atau kata kunci nama daun.
+    """
+    all_files = os.listdir(CITRA_DIR)
+    target_file = None
+
+    key_clean = leaf_key.lower().strip()
+    for f in all_files:
+        if f.lower() == key_clean or os.path.splitext(f)[0].lower().strip() == key_clean:
+            target_file = f
+            break
+
+    if target_file is None:
+        # Coba pencarian substring
+        for f in all_files:
+            if key_clean in f.lower():
+                target_file = f
+                break
+
+    if target_file is None:
+        return jsonify({"success": False, "error": f"Citra '{leaf_key}' tidak ditemukan di folder Citra Daun."}), 404
+
+    img_path = os.path.join(CITRA_DIR, target_file)
+    img_bgr = cv2.imread(img_path)
+    if img_bgr is None:
+        return jsonify({"success": False, "error": f"Gagal membaca citra '{target_file}'."}), 500
+
+    return jsonify({
+        "success": True,
+        "file_name": target_file,
+        "leaf_name": os.path.splitext(target_file)[0].strip(),
+        "image_base64": fe.image_to_base64(img_bgr, is_bgr=True)
+    })
 
 
-@app.route("/api/statistik", methods=["GET"])
-def get_statistik():
-    """Mengambil statistik ringkasan dari seluruh riwayat klasifikasi."""
-    try:
-        stats = db.hitung_statistik()
-        return jsonify({"success": True, "data": stats})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)}), 500
-
-
-# Server tidak dijalankan otomatis sesuai instruksi user
+# Server tidak dijalankan otomatis sesuai instruksi pengguna
 if __name__ == "__main__":
-    print("=" * 60)
-    print("SISTEM PENGOLAHAN CITRA DAUN - UTS CV")
-    print("Server siap dijalankan via batch file oleh pengguna.")
+    print("=" * 65)
+    print("SISTEM KLASIFIKASI CITRA DAUN (UTS COMPUTER VISION)")
+    print("Server siap dijalankan secara manual oleh pengguna.")
     print("Buka browser di: http://localhost:5000")
-    print("=" * 60)
+    print("=" * 65)
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port, debug=False)
